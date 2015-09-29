@@ -46,10 +46,20 @@ type Parser func(string)
 //MonitorEntity stands for a group of files which are needed by a same
 //rule to monitor
 type MonitorEntity struct {
-	//monitor suit
-	suit []Suit
+	//monitor path
+	path string
+	//file name parser
+	parser []reflect.Value
+	//file lines handler chains
+	handler [][]reflect.Value
+	//tail function
+	tail Tail
 	//monitor span in seconds
 	span int64
+	//last execute time
+	lasexec int64
+	//is the monitor entity is running
+	running bool
 }
 
 func main() {
@@ -77,8 +87,6 @@ func main() {
 		var me MonitorEntity
 		// a monitor is just for a file
 		for _, p := range e.Path {
-			var suit Suit
-
 			// apply file name parsers
 			for _, parser := range e.PathParser {
 				method := reflect.ValueOf(supportParsers).MethodByName(parser)
@@ -88,7 +96,7 @@ func main() {
 					log.Fatal(logmsg)
 					continue
 				}
-				append(suit.parser, method)
+				append(me.parser, method)
 			}
 
 			// apply file line handler chain
@@ -104,12 +112,77 @@ func main() {
 					}
 					append(tmpChain, method)
 				}
-				append(suit.handler, tmpChain)
+				me.tail = append(me.handler, tmpChain)
 			}
-			append(me.suit, suit)
 		}
-		me.span = e.Timespan
-		fmt.Println(me)
+		me.tail = genTailFunc(me)
+		append(monitorEntities, me)
+	}
+
+	fmt.Println(monitorEntities)
+}
+
+func genTailFunc(me MonitorEntity) Tail {
+	lastPos := 0
+	return func() {
+		// generate file path by parser chain
+		me.running = true
+		path := me.path
+		for _, p := range me.parser {
+			res := me.parser.Call([]reflect.Value{reflect.ValueOf(path)})
+			path = res[0].String()
+		}
+
+		// open the file
+		file, err := os.Open(path)
+		if err != nil {
+			log.Fatal(err)
+			return nil
+		}
+
+		// get size of the file
+		info, err := file.Stat()
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		currentSize := info.Size()
+
+		// current size of the file is smaller than the
+		// last position, file may rotate, read from the
+		// 0 position.
+		if currentSize < lastPos {
+			lastPos = 0
+		}
+
+		// seek to the last position before read it
+		_, err = file.Seek(lastPos, 0)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+
+		// update the lastPosition by size of the file
+		lastPos = currentSize
+
+		// tail the file line by line
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := scanner.Text()
+			// loop the chain slice to gen the results
+			for _, chain := range me.handler {
+				//loop the chain to call every handler in that chain
+				//cache the result of every chain to let be reuseable
+				result := line
+				for _, handler := range chain {
+					res := handler.Call([]reflect.Value{reflect.ValueOf(result)})
+					result = res[0].String()
+				}
+			}
+		}
+
+		me.lasexec = time.Now().Unix()
+		me.running = false
 	}
 }
 
