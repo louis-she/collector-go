@@ -2,49 +2,33 @@
 package main
 
 import (
-	"./ffmt"
 	"./handler"
 	"./parser"
-	//"bufio"
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"reflect"
-	//"time"
+	"time"
 )
 
-type ConfFile struct {
+// receiver of the json config
+type ConfigEntity struct {
 	Path         []string
 	PathParser   []string
 	HandlerChain [][]string
 	Timespan     int64
 }
 
+//receiver of the json config
 type Configuration struct {
-	Entity []ConfFile
+	Entity []ConfigEntity
 }
 
-type Tail func(string)
+// like tail -f
+type Tail func()
 
-type Suit struct {
-	path    string
-	parser  []reflect.Value
-	handler [][]reflect.Value
-	tail    Tail
-}
-
-// function that will handle a single line
-type Handler func(string)
-
-type Parser func(string)
-
-// type Case struct {
-// 	tailFunc Tail
-// }
-
-//MonitorEntity stands for a group of files which are needed by a same
-//rule to monitor
 type MonitorEntity struct {
 	//monitor path
 	path string
@@ -62,74 +46,108 @@ type MonitorEntity struct {
 	running bool
 }
 
-func main() {
-	var logmsg string
-	fname := ffmt.Fname{Path: "access.log.%H"}
-	fname = fname.Parse(ffmt.TimefmtParser)
-	fmt.Println(fname.Path)
+// Supporting handlers and parsers
+var supportHandlers handler.Sets
+var supportParsers parser.Sets
 
-	file, _ := os.Open("conf.json")
-	decoder := json.NewDecoder(file)
-	c := Configuration{}
-	err := decoder.Decode(&c)
+// apply json config to Configuration type
+func applyConfig(conf string, c *Configuration) error {
+	file, err := os.Open(conf)
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
-
-	supportHandlers := handler.Sets{}
-	supportParsers := parser.Sets{}
-
-	// configure monitor entities
-	var monitorEntities []MonitorEntity
-
-	for _, e := range c.Entity {
-		var me MonitorEntity
-		// a monitor is just for a file
-		for _, p := range e.Path {
-			// apply file name parsers
-			for _, parser := range e.PathParser {
-				method := reflect.ValueOf(supportParsers).MethodByName(parser)
-				if method.IsValid() == false {
-					// parser function is not valid
-					logmsg = fmt.Sprintf("parser %s is not valid function", parser)
-					log.Fatal(logmsg)
-					continue
-				}
-				append(me.parser, method)
-			}
-
-			// apply file line handler chain
-			for _, chain := range e.HandlerChain {
-				tmpChain := make([]reflect.Value, 5, 5)
-				for _, fHandler := range chain {
-					method := reflect.ValueOf(supportHandlers).MethodByName(fHandler)
-					if method.IsValid() == false {
-						// line handler function is not valid
-						logmsg = fmt.Sprintf("handler %s is not valid function", fHandler)
-						log.Fatal(logmsg)
-						continue
-					}
-					append(tmpChain, method)
-				}
-				me.tail = append(me.handler, tmpChain)
-			}
-		}
-		me.tail = genTailFunc(me)
-		append(monitorEntities, me)
-	}
-
-	fmt.Println(monitorEntities)
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(c)
+	return err
 }
 
-func genTailFunc(me MonitorEntity) Tail {
-	lastPos := 0
+func genEntity(file string, e ConfigEntity, me *MonitorEntity) {
+	var logmsg string
+	me.path = file
+	// apply file name parsers
+	for _, parser := range e.PathParser {
+		method := reflect.ValueOf(supportParsers).MethodByName(parser)
+		if method.IsValid() == false {
+			// parser function is not valid
+			logmsg = fmt.Sprintf("parser %s is not valid function", parser)
+			log.Fatal(logmsg)
+			continue
+		}
+		me.parser = append(me.parser, method)
+	}
+
+	// apply file line handler chain
+	for _, chain := range e.HandlerChain {
+		tmpChain := make([]reflect.Value, 0)
+		for _, fHandler := range chain {
+			method := reflect.ValueOf(supportHandlers).MethodByName(fHandler)
+			if method.IsValid() == false {
+				// line handler function is not valid
+				logmsg = fmt.Sprintf("handler %s is not valid function", fHandler)
+				log.Fatal(logmsg)
+				continue
+			}
+			tmpChain = append(tmpChain, method)
+			fmt.Println(tmpChain)
+		}
+		me.handler = append(me.handler, tmpChain)
+	}
+	me.tail = genTailFunc(me)
+}
+
+func main() {
+	// Read the config file
+	c := Configuration{}
+	applyConfig("conf.json", &c)
+
+	// MonitorEntities hold all the monitor
+	// entities, a file to be monitored count
+	// a entity
+	var monitorEntities []MonitorEntity
+
+	supportHandlers = handler.Sets{}
+	supportParsers = parser.Sets{}
+
+	for _, e := range c.Entity {
+		// A monitor is just for a file, it may be
+		// confused as in the config file where a
+		// entity seems like to associate with several
+		// files. But in the real an entity is just for
+		// one file, this is way the var me MonitorEntity
+		// is not called here.
+		for _, p := range e.Path {
+			me := MonitorEntity{}
+			genEntity(p, e, &me)
+			monitorEntities = append(monitorEntities, me)
+		}
+	}
+
+	// Dead loop to monitor all the files
+	for {
+		now := time.Now().Unix()
+		for _, entity := range monitorEntities {
+			if now-entity.lasexec < entity.span {
+				// not this entity by now
+				continue
+			}
+			entity.tail()
+		}
+		time.Sleep(1000000)
+	}
+
+}
+
+// First class function to create custom
+// tail function for each entity
+func genTailFunc(me *MonitorEntity) Tail {
+	var lastPos int64
+	lastPos = 0
 	return func() {
 		// generate file path by parser chain
 		me.running = true
 		path := me.path
 		for _, p := range me.parser {
-			res := me.parser.Call([]reflect.Value{reflect.ValueOf(path)})
+			res := p.Call([]reflect.Value{reflect.ValueOf(path)})
 			path = res[0].String()
 		}
 
@@ -137,7 +155,7 @@ func genTailFunc(me MonitorEntity) Tail {
 		file, err := os.Open(path)
 		if err != nil {
 			log.Fatal(err)
-			return nil
+			return
 		}
 
 		// get size of the file
@@ -185,65 +203,3 @@ func genTailFunc(me MonitorEntity) Tail {
 		me.running = false
 	}
 }
-
-// func genWorkSlice(c Configuration) []Case {
-// 	var ret []Case
-// 	for _, v := range c.Entity {
-// 		var h Handler
-// 		if v.Function == "Println" {
-// 			h = func(line string) {
-// 				fmt.Println(line)
-// 			}
-// 		} else {
-// 			h = func(line string) {
-// 				nt := time.Now()
-// 				currentTime := fmt.Sprintf("%d:%d", nt.Hour(), nt.Minute())
-// 				fmt.Println("[", currentTime, "]", " default handler: ", line)
-// 			}
-// 		}
-// 		tail := tailTheFile(v.Path, 0, h)
-//
-// 		ca := Case{tailFunc: tail}
-// 		ret = append(ret, ca)
-// 	}
-// 	return ret
-// }
-
-// generate a function to tail for a file
-// func tailTheFile(path string, pos int64, h Handler) Tail {
-// 	lastPos := pos
-// 	file, err := os.Open(path)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 		return nil
-// 	}
-// 	return func() {
-// 		info, err := file.Stat()
-// 		if err != nil {
-// 			log.Fatal(err)
-// 			return
-// 		}
-//
-// 		currentSize := info.Size()
-//
-// 		// current size of the file is smaller than the
-// 		// last position, file may rotate, read from the
-// 		// 0 position.
-// 		if currentSize < lastPos {
-// 			lastPos = 0
-// 		}
-//
-// 		_, err = file.Seek(lastPos, 0)
-// 		if err != nil {
-// 			log.Fatal(err)
-// 			return
-// 		}
-//
-// 		lastPos = currentSize
-// 		scanner := bufio.NewScanner(file)
-// 		for scanner.Scan() {
-// 			line := scanner.Text()
-// 			h(line)
-// 		}
-// 	}
-// }
