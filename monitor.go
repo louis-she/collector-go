@@ -88,7 +88,6 @@ func genEntity(file string, e ConfigEntity, me *MonitorEntity) {
 				continue
 			}
 			tmpChain = append(tmpChain, method)
-			fmt.Println(tmpChain)
 		}
 		me.handler = append(me.handler, tmpChain)
 	}
