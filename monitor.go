@@ -97,7 +97,11 @@ func genEntity(file string, e ConfigEntity, me *MonitorEntity) {
 func main() {
 	// Read the config file
 	c := Configuration{}
-	applyConfig("conf.json", &c)
+	err := applyConfig("conf.json", &c)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
 
 	// MonitorEntities hold all the monitor
 	// entities, a file to be monitored count
@@ -123,6 +127,7 @@ func main() {
 
 	// Dead loop to monitor all the files
 	for {
+		time.Sleep(1000000000)
 		now := time.Now().Unix()
 		for _, entity := range monitorEntities {
 			if now-entity.lasexec < entity.span {
@@ -131,7 +136,6 @@ func main() {
 			}
 			entity.tail()
 		}
-		time.Sleep(1000000)
 	}
 
 }
@@ -190,10 +194,10 @@ func genTailFunc(me *MonitorEntity) Tail {
 			for _, chain := range me.handler {
 				//loop the chain to call every handler in that chain
 				//cache the result of every chain to let be reuseable
-				result := line
+				result := reflect.ValueOf(line)
 				for _, handler := range chain {
-					res := handler.Call([]reflect.Value{reflect.ValueOf(result)})
-					result = res[0].String()
+					res := handler.Call([]reflect.Value{result})
+					result = res[0]
 				}
 			}
 		}
