@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"reflect"
+	"strings"
 	"time"
 )
 
@@ -80,7 +81,14 @@ func genEntity(file string, e ConfigEntity, me *MonitorEntity) {
 	for _, chain := range e.HandlerChain {
 		tmpChain := make([]reflect.Value, 0)
 		for _, fHandler := range chain {
+			spt := strings.Split(fHandler, "(")
+			fHandler = spt[0]
 			method := reflect.ValueOf(supportHandlers).MethodByName(fHandler)
+			if len(spt) == 2 && spt[1] == ")" {
+				// fHandler is a first class function,
+				// should call it first
+				method = method.Call([]reflect.Value{})[0]
+			}
 			if method.IsValid() == false {
 				// line handler function is not valid
 				logmsg = fmt.Sprintf("handler %s is not valid function", fHandler)
@@ -130,14 +138,13 @@ func main() {
 		time.Sleep(1000000000)
 		now := time.Now().Unix()
 		for _, entity := range monitorEntities {
-			if now-entity.lasexec < entity.span {
+			if now-entity.lasexec < entity.span || entity.running == true {
 				// not this entity by now
 				continue
 			}
 			entity.tail()
 		}
 	}
-
 }
 
 // First class function to create custom
