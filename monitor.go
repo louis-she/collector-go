@@ -1,4 +1,4 @@
-//Monitor logs in go
+//logs collector
 package main
 
 import (
@@ -71,7 +71,7 @@ func genEntity(file string, e ConfigEntity, me *MonitorEntity) {
 		if method.IsValid() == false {
 			// parser function is not valid
 			logmsg = fmt.Sprintf("parser %s is not valid function", parser)
-			log.Fatal(logmsg)
+			log.Println(logmsg)
 			continue
 		}
 		me.parser = append(me.parser, method)
@@ -92,7 +92,7 @@ func genEntity(file string, e ConfigEntity, me *MonitorEntity) {
 			if method.IsValid() == false {
 				// line handler function is not valid
 				logmsg = fmt.Sprintf("handler %s is not valid function", fHandler)
-				log.Fatal(logmsg)
+				log.Println(logmsg)
 				continue
 			}
 			tmpChain = append(tmpChain, method)
@@ -124,7 +124,7 @@ func main() {
 		// confused as in the config file where a
 		// entity seems like to associate with several
 		// files. But in the real an entity is just for
-		// one file, this is way the var me MonitorEntity
+		// one file, this is why the me := MonitorEntity
 		// is not called here.
 		for _, p := range e.Path {
 			me := MonitorEntity{}
@@ -163,15 +163,16 @@ func genTailFunc(me *MonitorEntity) Tail {
 
 		// open the file
 		file, err := os.Open(path)
+		defer file.Close()
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
 			return
 		}
 
 		// get size of the file
 		info, err := file.Stat()
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
 			return
 		}
 		currentSize := info.Size()
@@ -186,7 +187,7 @@ func genTailFunc(me *MonitorEntity) Tail {
 		// seek to the last position before read it
 		_, err = file.Seek(lastPos, 0)
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
 			return
 		}
 
