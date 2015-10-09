@@ -1,0 +1,11 @@
+{
+  "Entity": [
+    {
+      "Path": ["/root/gowork/src/access_log.1"],
+      "HandlerChain": [
+        ["DfApacheAccesslogExtimePathCodeAverage()"]
+      ],
+      "Timespan": 20
+    }
+  ]
+}
