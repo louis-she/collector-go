@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -98,12 +99,13 @@ func (s Sets) DfApacheAccesslogExtimePathCode(l string) string {
 // add a msg to human_alert table to send
 // alert email and sms
 func dfAlert(msg string) {
-	db, err := sql.Open("mysql", "root:akaqa123@tcp(10.100.56.32:6001)/monitor")
-	defer db.Close()
+	file, err := os.OpenFile("/home/work/var/log/alert.log", os.O_WRONLY|os.O_APPEND, 0644)
+	defer file.Close()
 	if err != nil {
 		log.Println(err)
+		return
 	}
-	_, err = db.Exec("insert into human_alert(msg, ctime) value (?, FROM_UNIXTIME(?))", msg, time.Now().Unix())
+	_, err = file.WriteString(fmt.Sprintf("%s %s\n", time.Now().Format(time.ANSIC), msg))
 	if err != nil {
 		log.Println(err)
 	}
