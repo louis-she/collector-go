@@ -20,6 +20,7 @@ type ConfigEntity struct {
 	PathParser   []string
 	HandlerChain [][]string
 	Timespan     int64
+	Empty        string
 }
 
 //receiver of the json config
@@ -45,6 +46,8 @@ type MonitorEntity struct {
 	lasexec int64
 	//is the monitor entity is running
 	running bool
+	//empty handler
+	empty reflect.Value
 }
 
 // Supporting handlers and parsers
@@ -99,7 +102,28 @@ func genEntity(file string, e ConfigEntity, me *MonitorEntity) {
 		}
 		me.handler = append(me.handler, tmpChain)
 	}
+
+	// set span
+	me.span = e.Timespan
+
+	// init last exec time
+	me.lasexec = time.Now().Unix()
+
+	// apply empty function
+	if e.Empty != "" {
+		method := reflect.ValueOf(supportHandlers).MethodByName(e.Empty)
+		if method.IsValid() == false {
+			logmsg = fmt.Sprintf("Empty handler %s is not valid function", e.Empty)
+			log.Fatal(logmsg)
+		}
+		me.empty = method
+	} else {
+		me.empty = reflect.ValueOf(func() {})
+	}
+
+	// apply tail function
 	me.tail = genTailFunc(me)
+
 }
 
 func main() {
@@ -114,7 +138,7 @@ func main() {
 	// MonitorEntities hold all the monitor
 	// entities, a file to be monitored count
 	// a entity
-	var monitorEntities []MonitorEntity
+	var monitorEntities []*MonitorEntity
 
 	supportHandlers = handler.Sets{}
 	supportParsers = parser.Sets{}
@@ -129,7 +153,7 @@ func main() {
 		for _, p := range e.Path {
 			me := MonitorEntity{}
 			genEntity(p, e, &me)
-			monitorEntities = append(monitorEntities, me)
+			monitorEntities = append(monitorEntities, &me)
 		}
 	}
 
@@ -137,12 +161,12 @@ func main() {
 	for {
 		time.Sleep(1000000000)
 		now := time.Now().Unix()
-		for _, entity := range monitorEntities {
-			if now-entity.lasexec < entity.span || entity.running == true {
+		for i, _ := range monitorEntities {
+			if now-monitorEntities[i].lasexec < monitorEntities[i].span || monitorEntities[i].running == true {
 				// not this entity by now
 				continue
 			}
-			entity.tail()
+			monitorEntities[i].tail()
 		}
 	}
 }
@@ -155,6 +179,10 @@ func genTailFunc(me *MonitorEntity) Tail {
 	return func() {
 		// generate file path by parser chain
 		me.running = true
+		defer func() {
+			me.running = false
+			me.lasexec = time.Now().Unix()
+		}()
 		path := me.path
 		for _, p := range me.parser {
 			res := p.Call([]reflect.Value{reflect.ValueOf(path)})
@@ -184,6 +212,13 @@ func genTailFunc(me *MonitorEntity) Tail {
 			lastPos = 0
 		}
 
+		// current size is the same as last position, call
+		// empty method then return
+		if currentSize == lastPos {
+			me.empty.Call([]reflect.Value{})
+			return
+		}
+
 		// seek to the last position before read it
 		_, err = file.Seek(lastPos, 0)
 		if err != nil {
@@ -210,7 +245,6 @@ func genTailFunc(me *MonitorEntity) Tail {
 			}
 		}
 
-		me.lasexec = time.Now().Unix()
-		me.running = false
+		return
 	}
 }

@@ -5,7 +5,12 @@
       "HandlerChain": [
         ["DfApacheAccesslogExtimePathCodeAverage()"]
       ],
-      "Timespan": 20
-    }
+      "Timespan": 2
+    },
+    {
+      "Path": ["/root/gowork/src/not_change_file"],
+      "Empty": "FileNotChanged",
+      "Timespan": 4
+    },
   ]
 }
