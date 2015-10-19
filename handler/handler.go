@@ -28,7 +28,7 @@ func (s Sets) DfApacheAccesslogExtimePathCodeAverage() func(l string) string {
 	counter := make(map[string]int)
 	sumextime := make(map[string]int)
 	times := 10
-	threshold := 100000 // 0.1 seconds
+	threshold := 1000 // 0.001 seconds
 
 	return func(l string) string {
 		res := line.PickColumn(reflect.ValueOf(l).String(), " ", 5, 7, 3)
