@@ -49,6 +49,8 @@ A handler is a func which take just one parameter of string type, which is a lin
   * **Handlers can be higher order function** You may notice that there is a **()** in the **some_handler_2()**, the **()** makes the **some_handler_2** a higher order function, then the **some_handler_2** should not return a string but a function, and this return function is actually the real handler. This can be helpful when you need some variables be accessed for a handler in the whole time the collector is running, without being the global variables. Say that you want to sum the lines you have already "tailed", then you should put a **sum** variable in the super order function and access the variable in the return function which is the handler.
   * **Result cached** In the example, there are two handler chain for one file, and for each of the chain, the first handler is **some_handler_1**. In this case, there is no need to execute the **some_handler_1** twice, and the collector do will cache the result of **some_handler_1**
 
+
+
 * Timespan
 
 The span of a entity execution.
