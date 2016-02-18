@@ -48,6 +48,17 @@ func (s Sets) DfApacheAccesslogExtimePathCodeAverage() func(l string) string {
 			return ""
 		}
 		module := pmodule[1]
+		whitelist := []string{"rcop", "rulecube", "sap", "teleport", "unionaudit", "userchk", "vchk", "vcredit", "ka", "jubao"}
+		find := 0
+		for _, whiteModule := range whitelist {
+			if whiteModule == module {
+				find = 1
+				break
+			}
+		}
+		if find == 0 {
+			return ""
+		}
 		counter[path] += 1
 		sumextime[path] += extime
 		if counter[path] == times {
@@ -99,7 +110,7 @@ func (s Sets) DfApacheAccesslogExtimePathCode(l string) string {
 // add a msg to human_alert table to send
 // alert email and sms
 func dfAlert(msg string) {
-	file, err := os.OpenFile("/home/work/var/log/alert.log", os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile("/home/work/var/logs/alert.log", os.O_WRONLY|os.O_APPEND, 0644)
 	defer file.Close()
 	if err != nil {
 		log.Println(err)
